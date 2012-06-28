@@ -18,3 +18,4 @@ fluentd
 pkg/*
 test/tmp/*
 make_dist.sh
+*~

@@ -15,8 +15,17 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 #
+
+
 module Fluent
 
+
+class EmptyLoop
+  include Celluloid
+  def initialize
+    @timer = every(3) { puts "Timer fired!" }
+  end
+end
 
 class EngineClass
   def initialize
@@ -138,11 +147,13 @@ class EngineClass
         $log.enable_event
       end
 
+
       # for empty loop
-      @default_loop = Coolio::Loop.default
-      @default_loop.attach Coolio::TimerWatcher.new(1, true)
+    EmptyLoop.run
+#      @default_loop = Thread.current[:actor]
+#      @default_loop.attach Coolio::TimerWatcher.new(1, true)
       # TODO attach async watch for thread pool
-      @default_loop.run
+#      @default_loop.run
 
     rescue
       $log.error "unexpected error", :error=>$!.to_s

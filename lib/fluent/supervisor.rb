@@ -76,7 +76,6 @@ class Supervisor
   def start
     require 'fluent/load'
     @log.init
-
     start_daemonize if @daemonize
     install_supervisor_signal_handlers
     until @finished
@@ -151,9 +150,7 @@ class Supervisor
     start_time = Time.now
 
     $log.info "starting fluentd-#{Fluent::VERSION}"
-    @main_pid = fork do
-      main_process(&block)
-    end
+    @main_pid = Thread.new(&block)
 
     if @daemonize && @wait_daemonize_pipe_w
       STDIN.reopen("/dev/null")
@@ -163,7 +160,7 @@ class Supervisor
       @wait_daemonize_pipe_w = nil
     end
 
-    Process.waitpid(@main_pid)
+    @main_pid.join
     @main_pid = nil
     ecode = $?.to_i
 
@@ -216,19 +213,19 @@ class Supervisor
       end
     end
 
-    trap :HUP do
-      $log.info "restarting"
-      if pid = @main_pid
-        Process.kill(:TERM, pid)
-      end
-    end
+    #trap :HUP do
+    #  $log.info "restarting"
+    #  if pid = @main_pid
+    #    Process.kill(:TERM, pid)
+    #  end
+    #end
 
-    trap :USR1 do
-      @log.reopen!
-      if pid = @main_pid
-        Process.kill(:USR1, pid)
-      end
-    end
+#    trap :USR1 do
+#      @log.reopen!
+#      if pid = @main_pid
+#        Process.kill(:USR1, pid)
+#      end
+#    end
   end
 
   def read_config
@@ -296,15 +293,15 @@ class Supervisor
       Fluent::Engine.stop
     end
 
-    trap :HUP do
-      # TODO
-    end
+#    trap :HUP do
+#      # TODO
+#    end
 
-    trap :USR1 do
-      $log.info "force flushing buffered events"
-      @log.reopen!
-      Fluent::Engine.flush!
-    end
+#    trap :USR1 do
+#      $log.info "force flushing buffered events"
+#      @log.reopen!
+#      Fluent::Engine.flush!
+#    end
   end
 
   def run_engine
