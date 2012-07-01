@@ -132,7 +132,6 @@ class TailInput < Input
     end
 
     def detach
-      p 'detach'
       @timer_trigger.terminate if @timer_trigger.alive?
       @stat_trigger.terminate if @stat_trigger.alive?
     end
