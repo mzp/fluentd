@@ -149,12 +149,8 @@ class EngineClass
 
 
       # for empty loop
-    EmptyLoop.run
-#      @default_loop = Thread.current[:actor]
-#      @default_loop.attach Coolio::TimerWatcher.new(1, true)
-      # TODO attach async watch for thread pool
-#      @default_loop.run
-
+      @default_loop = EmptyLoop.new
+      @default_loop.join
     rescue
       $log.error "unexpected error", :error=>$!.to_s
       $log.error_backtrace
@@ -166,7 +162,7 @@ class EngineClass
   def stop
     $log.info "shutting down fluentd"
     if @default_loop
-      @default_loop.stop
+      @default_loop.terminate
       @default_loop = nil
     end
     nil
@@ -275,4 +271,3 @@ module Test
 end
 
 end
-
