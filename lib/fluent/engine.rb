@@ -23,7 +23,7 @@ module Fluent
 class EmptyLoop
   include Celluloid
   def initialize
-    @timer = every(3) { puts "Timer fired!" }
+    @timer = every(1) {}
   end
 end
 
