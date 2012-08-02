@@ -43,6 +43,8 @@ class Supervisor
 
       $log.enable_color(false) if @path
       $log.enable_debug if @level <= Fluent::Log::LEVEL_DEBUG
+
+      Celluloid.logger = $log
     end
 
     def stdout?

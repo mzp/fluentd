@@ -90,23 +90,16 @@ class SyslogInput < Input
       callback = method(:receive_data)
     end
 
-    @loop = Coolio::Loop.new
-
     $log.debug "listening syslog socket on #{@bind}:#{@port}"
-    @usock = UDPSocket.new
+    @usock = Celluloid::IO::UDPSocket.new
     @usock.bind(@bind, @port)
 
-    @handler = UdpHandler.new(@usock, callback)
-    @loop.attach(@handler)
-
-    @thread = Thread.new(&method(:run))
+    @handler = UdpHandler.supervise(@usock, callback)
   end
 
   def shutdown
-    @loop.watchers.each {|w| w.detach }
-    @loop.stop
-    @handler.close
-    @thread.join
+    @handler.terminate if @handler.alive?
+    @usock.close
   end
 
   def run
@@ -181,12 +174,8 @@ class SyslogInput < Input
     Engine.emit(tag, time, record)
   end
 
-  class UdpHandler < Coolio::IO
-    def initialize(io, callback)
-      super(io)
-      @io = io
-      @callback = callback
-    end
+  class UdpHandler < UDPServer
+    include Celluloid::IO
 
     def on_readable
       msg, addr = @io.recvfrom_nonblock(1024)
@@ -194,7 +183,7 @@ class SyslogInput < Input
       #port = addr[1]
       #@callback.call(host, port, msg)
       @callback.call(msg)
-    rescue
+    rescue => e
       # TODO log?
     end
   end

@@ -59,23 +59,16 @@ class TailInput < Input
   end
 
   def start
-    @loop = Coolio::Loop.new
     @tails = @paths.map {|path|
       pe = @pf ? @pf[path] : NullPositionEntry.instance
       TailWatcher.new(path, @rotate_wait, pe, &method(:receive_lines))
     }
-    @tails.each {|tail|
-      tail.attach(@loop)
-    }
-    @thread = Thread.new(&method(:run))
   end
 
   def shutdown
     @tails.each {|tail|
       tail.close
     }
-    @loop.stop
-    @thread.join
     @pf_file.close if @pf_file
   end
 
@@ -119,22 +112,18 @@ class TailInput < Input
 
       @rotate_queue = []
 
-      @timer_trigger = TimerWatcher.new(1, true, &method(:on_notify))
+      @timer_trigger = TimerWatcher.new(1, &method(:on_notify))
       @stat_trigger = StatWatcher.new(path, &method(:on_notify))
 
       @rotate_handler = RotateHandler.new(path, &method(:on_rotate))
       @io_handler = nil
-    end
 
-    def attach(loop)
-      @timer_trigger.attach(loop)
-      @stat_trigger.attach(loop)
       on_notify
     end
 
     def detach
-      @timer_trigger.detach if @timer_trigger.attached?
-      @stat_trigger.detach if @stat_trigger.attached?
+      @timer_trigger.terminate if @timer_trigger.alive?
+      @stat_trigger.terminate if @stat_trigger.alive?
     end
 
     def close
@@ -208,10 +197,12 @@ class TailInput < Input
       end
     end
 
-    class TimerWatcher < Coolio::TimerWatcher
-      def initialize(interval, repeat, &callback)
+    class TimerWatcher
+      include Celluloid
+
+      def initialize(interval, &callback)
         @callback = callback
-        super(interval, repeat)
+        every(interval, &method(:on_timer))
       end
 
       def on_timer
@@ -223,10 +214,18 @@ class TailInput < Input
       end
     end
 
-    class StatWatcher < Coolio::StatWatcher
+    class StatWatcher
+      include Celluloid
+
       def initialize(path, &callback)
+        @path = path
         @callback = callback
-        super(path)
+        @stat = File.stat @path
+        every(1) {
+          stat  = File.stat @path
+          on_change(@stat, stat) unless stat == @stat
+          @stat = stat
+        }
       end
 
       def on_change(prev, cur)

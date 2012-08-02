@@ -19,6 +19,14 @@ module Fluent
 
 
 class EngineClass
+  class EmptyLoop
+    include Celluloid
+
+    def initialize
+      every(1) { }
+    end
+  end
+
   def initialize
     @matches = []
     @sources = []
@@ -138,12 +146,12 @@ class EngineClass
         $log.enable_event
       end
 
-      # for empty loop
-      @default_loop = Coolio::Loop.default
-      @default_loop.attach Coolio::TimerWatcher.new(1, true)
-      # TODO attach async watch for thread pool
-      @default_loop.run
+      @thread = Thread.current
 
+      # for empty loop
+      @default_loop = EmptyLoop.new
+      # TODO attach async watch for thread pool
+      @default_loop.join
     rescue
       $log.error "unexpected error", :error=>$!.to_s
       $log.error_backtrace
@@ -155,8 +163,19 @@ class EngineClass
   def stop
     $log.info "shutting down fluentd"
     if @default_loop
-      @default_loop.stop
+      @default_loop.terminate! if @default_loop.alive?
       @default_loop = nil
+
+      # watch dog
+      Thread.start do
+        sleep 0.1
+        @thread.wakeup
+        sleep 0.1
+        if @thread && @thread.alive?
+          $log.warn "main thread is still alive. force shutdown"
+          @thread.kill
+        end
+      end
     end
     nil
   end
