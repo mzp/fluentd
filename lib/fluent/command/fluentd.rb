@@ -125,6 +125,12 @@ if setup_path = opts[:setup_path]
   exit 0
 end
 
-require 'fluent/supervisor'
-Fluent::Supervisor.new(opts).start
+supervisor = if RUBY_PLATFORM.downcase =~ /mswin(?!ce)|mingw|cygwin|bccwin|java/
+               require 'fluent/windows/supervisor'
+               Fluent::Windows::Supervisor
+             else
+               require 'fluent/supervisor'
+               Fluent::Supervisor
+             end
 
+supervisor.new(opts).start

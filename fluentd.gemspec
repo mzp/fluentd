@@ -73,6 +73,7 @@ Gem::Specification.new do |s|
     "lib/fluent/test/input_test.rb",
     "lib/fluent/test/output_test.rb",
     "lib/fluent/version.rb",
+    "lib/fluent/windows/supervisor.rb",
     "test/config.rb",
     "test/helper.rb",
     "test/match.rb",
