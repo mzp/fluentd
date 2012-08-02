@@ -39,7 +39,9 @@ class HttpInput < Input
     super
   end
 
-  class KeepaliveManager < Coolio::TimerWatcher
+  class KeepaliveManager
+    include Celluloid
+
     class TimerValue
       def initialize
         @value = 0
@@ -48,9 +50,9 @@ class HttpInput < Input
     end
 
     def initialize(timeout)
-      super(1, true)
       @cons = {}
       @timeout = timeout.to_i
+      every(1, &method(:on_timer))
     end
 
     def add(sock)
@@ -77,22 +79,15 @@ class HttpInput < Input
     detach_multi_process do
       super
       @km = KeepaliveManager.new(@keepalive_timeout)
-      #@lsock = Coolio::TCPServer.new(@bind, @port, Handler, @km, method(:on_request), @body_size_limit)
-      @lsock = Coolio::TCPServer.new(lsock, nil, Handler, @km, method(:on_request), @body_size_limit)
-
-      @loop = Coolio::Loop.new
-      @loop.attach(@km)
-      @loop.attach(@lsock)
-
-      @thread = Thread.new(&method(:run))
+#     @lsock = TCPServerAdapter.new(@bind, @port, Handler, @km, method(:on_request), @body_size_limit)
+      @lsock = TCPServerAdapter.new(lsock, nil, Handler, @km, method(:on_request), @body_size_limit)
     end
   end
 
   def shutdown
-    @loop.watchers.each {|w| w.detach }
-    @loop.stop
     @lsock.close
-    @thread.join
+    @lsock.terminate if @lsock.alive?
+    @km.terminate if @km.alive?
   end
 
   def run
@@ -137,9 +132,9 @@ class HttpInput < Input
     return ["200 OK", {'Content-type'=>'text/plain'}, ""]
   end
 
-  class Handler < Coolio::Socket
+  class Handler
     def initialize(io, km, callback, body_size_limit)
-      super(io)
+      @io = io
       @km = km
       @callback = callback
       @body_size_limit = body_size_limit
@@ -270,9 +265,9 @@ class HttpInput < Input
         data << "#{k}: #{v}\r\n"
       }
       data << "\r\n"
-      write data
+      @io.write data
 
-      write body
+      @io.write body
     end
 
     def send_response_nobody(code, header)
@@ -281,7 +276,7 @@ class HttpInput < Input
         data << "#{k}: #{v}\r\n"
       }
       data << "\r\n"
-      write data
+      @io.write data
     end
   end
 end

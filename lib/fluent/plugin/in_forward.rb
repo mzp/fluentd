@@ -33,32 +33,25 @@ class ForwardInput < Input
   end
 
   def start
-    @loop = Coolio::Loop.new
-
     @lsock = listen
-    @loop.attach(@lsock)
 
-    @usock = UDPSocket.new
+    @usock = Celluloid::IO::UDPSocket.new
     @usock.bind(@bind, @port)
     @hbr = HeartbeatRequestHandler.new(@usock, method(:on_heartbeat_request))
-    @loop.attach(@hbr)
 
-    @thread = Thread.new(&method(:run))
     @cached_unpacker = MessagePack::Unpacker.new
   end
 
   def shutdown
-    @loop.watchers.each {|w| w.detach }
-    @loop.stop
+    @hbr.terminate if @hbr.alive?
     @usock.close
     TCPSocket.open('127.0.0.1', @port) {|sock| }  # FIXME @thread.join blocks without this line
-    @thread.join
-    @lsock.close
+    @lsock.close if @lsock.alive?
   end
 
   def listen
     $log.info "listening fluent socket on #{@bind}:#{@port}"
-    Coolio::TCPServer.new(@bind, @port, Handler, method(:on_message))
+    TCPServerAdapter.new(@bind, @port, Handler, method(:on_message))
   end
 
   #config_param :path, :string, :default => DEFAULT_SOCKET_PATH
@@ -129,9 +122,8 @@ class ForwardInput < Input
     end
   end
 
-  class Handler < Coolio::Socket
+  class Handler
     def initialize(io, on_message)
-      super(io)
       if io.is_a?(TCPSocket)
         opt = [1, @timeout.to_i].pack('I!I!')  # { int l_onoff; int l_linger; }
         io.setsockopt(Socket::SOL_SOCKET, Socket::SO_LINGER, opt)
@@ -181,13 +173,8 @@ class ForwardInput < Input
     end
   end
 
-  class HeartbeatRequestHandler < Coolio::IO
-    def initialize(io, callback)
-      super(io)
-      @io = io
-      @callback = callback
-    end
-
+  class HeartbeatRequestHandler < UDPServer
+    include Celluloid::IO
     def on_readable
       msg, addr = @io.recvfrom(1024)
       host = addr[3]
@@ -206,4 +193,3 @@ end
 
 
 end
-

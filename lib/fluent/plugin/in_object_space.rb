@@ -29,10 +29,11 @@ class ObjectSpaceInput < Input
   config_param :tag, :string
   config_param :top, :integer, :default => 15
 
-  class TimerWatcher < Coolio::TimerWatcher
-    def initialize(interval, repeat, &callback)
+  class TimerWatcher
+    include Celluloid
+    def initialize(interval, &callback)
       @callback = callback
-      super(interval, repeat)
+      every(interval, &method(:on_timer))
     end
 
     def on_timer
@@ -49,16 +50,12 @@ class ObjectSpaceInput < Input
   end
 
   def start
-    @loop = Coolio::Loop.new
-    @timer = TimerWatcher.new(@emit_interval, true, &method(:on_timer))
-    @loop.attach(@timer)
-    @thread = Thread.new(&method(:run))
+    @timer = TimerWatcher.supervise(@emit_interval, &method(:on_timer))
   end
 
   def shutdown
-    @loop.watchers.each {|w| w.detach }
-    @loop.stop
-    @thread.join
+    @timer.terminate
+    @timer.join if @timer.alive?
   end
 
   def run

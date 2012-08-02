@@ -28,18 +28,19 @@ class GCStatInput < Input
   config_param :emit_interval, :time, :default => 60
   config_param :tag, :string
 
-  class TimerWatcher < Coolio::TimerWatcher
-    def initialize(interval, repeat, &callback)
-      @callback = callback
-      super(interval, repeat)
-    end
+  class TimerWatcher
+    include Celluloid
 
-    def on_timer
-      @callback.call
-    rescue
-      # TODO log?
-      $log.error $!.to_s
-      $log.error_backtrace
+    def initialize(interval, &callback)
+      every(interval) do
+        begin
+          callback.call
+        rescue
+          # TODO log?
+         $log.error $!.to_s
+         $log.error_backtrace
+        end
+      end
     end
   end
 
@@ -48,23 +49,12 @@ class GCStatInput < Input
   end
 
   def start
-    @loop = Coolio::Loop.new
-    @timer = TimerWatcher.new(@emit_interval, true, &method(:on_timer))
-    @loop.attach(@timer)
-    @thread = Thread.new(&method(:run))
+    @timer = TimerWatcher.supervise(@emit_interval, &method(:on_timer))
   end
 
   def shutdown
-    @loop.watchers.each {|w| w.detach }
-    @loop.stop
-    @thread.join
-  end
-
-  def run
-    @loop.run
-  rescue
-    $log.error "unexpected error", :error=>$!.to_s
-    $log.error_backtrace
+    @timer.terminate
+    @timer.join
   end
 
   def on_timer

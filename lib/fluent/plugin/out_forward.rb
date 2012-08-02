@@ -86,24 +86,17 @@ class ForwardOutput < ObjectBufferedOutput
     rebuild_weight_array
     @rr = 0
 
-    @loop = Coolio::Loop.new
-
-    @usock = UDPSocket.new
+    @usock = Celluloid::IO::UDPSocket.new
     @hb = HeartbeatHandler.new(@usock, method(:on_heartbeat))
-    @loop.attach(@hb)
 
     @timer = HeartbeatRequestTimer.new(@heartbeat_interval, method(:on_timer))
-    @loop.attach(@timer)
-
-    @thread = Thread.new(&method(:run))
   end
 
   def shutdown
     @finished = true
-    @loop.watchers.each {|w| w.detach }
-    @loop.stop
-    @thread.join
     @usock.close
+    @hb.terminate if @tb.alive?
+    @timer.terminate if @timer.alive?
   end
 
   def run
@@ -233,10 +226,11 @@ class ForwardOutput < ObjectBufferedOutput
     TCPSocket.new(node.resolved_host, node.port)
   end
 
-  class HeartbeatRequestTimer < Coolio::TimerWatcher
+  class HeartbeatRequestTimer
+    include Celluloid
     def initialize(interval, callback)
-      super(interval, true)
       @callback = callback
+      every(interval, &method(:on_timer))
     end
 
     def on_timer
@@ -262,11 +256,21 @@ class ForwardOutput < ObjectBufferedOutput
     }
   end
 
-  class HeartbeatHandler < Coolio::IO
+  class HeartbeatHandler
+    include Celluloid
+
     def initialize(io, callback)
       super(io)
       @io = io
       @callback = callback
+      run!
+    end
+
+    def run
+      loop do
+        @io.wait_readable
+        on_readable
+      end
     end
 
     def on_readable
