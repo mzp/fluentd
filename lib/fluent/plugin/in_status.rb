@@ -29,34 +29,17 @@ class StatusInput < Input
   config_param :emit_interval, :time, :default => 60
   config_param :tag, :string
 
-  class TimerWatcher < Coolio::TimerWatcher
-    def initialize(interval, repeat, &callback)
-      @callback = callback
-      super(interval, repeat)
-    end
-
-    def on_timer
-      @callback.call
-    rescue
-      # TODO log?
-      $log.error $!.to_s
-      $log.error_backtrace
-    end
-  end
-
   def configure(conf)
     super
   end
 
   def start
-    @loop = Coolio::Loop.new
-    @timer = TimerWatcher.new(@emit_interval, true, &method(:on_timer))
-    @loop.attach(@timer)
+    @loop = Fluent::EventIO::Loop.create
+    @loop.timer(@emit_interval.to_i, true, &method(:on_timer))
     @thread = Thread.new(&method(:run))
   end
 
   def shutdown
-    @loop.watchers.each {|w| w.detach }
     @loop.stop
     @thread.join
   end

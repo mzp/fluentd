@@ -33,32 +33,24 @@ class ForwardInput < Input
   end
 
   def start
-    @loop = Coolio::Loop.new
+    @loop = Fluent::EventIO::Loop.create
 
     @lsock = listen
-    @loop.attach(@lsock)
 
-    @usock = UDPSocket.new
-    @usock.bind(@bind, @port)
-    @hbr = HeartbeatRequestHandler.new(@usock, method(:on_heartbeat_request))
-    @loop.attach(@hbr)
+    @usock = @loop.udp.bind(@bind, @port).start(&method(:on_heartbeat_request))
 
     @thread = Thread.new(&method(:run))
     @cached_unpacker = MessagePack::Unpacker.new
   end
 
   def shutdown
-    @loop.watchers.each {|w| w.detach }
     @loop.stop
-    @usock.close
-    TCPSocket.open('127.0.0.1', @port) {|sock| }  # FIXME @thread.join blocks without this line
     @thread.join
-    @lsock.close
   end
 
   def listen
     $log.info "listening fluent socket on #{@bind}:#{@port}"
-    Coolio::TCPServer.new(@bind, @port, Handler, method(:on_message))
+    @loop.tcp(@bind, @port).listen_handler(5, Handler, method(:on_message))
   end
 
   #config_param :path, :string, :default => DEFAULT_SOCKET_PATH
@@ -129,18 +121,10 @@ class ForwardInput < Input
     end
   end
 
-  class Handler < Coolio::Socket
+  class Handler < Fluent::EventIO::Handler
     def initialize(io, on_message)
       super(io)
-      if io.is_a?(TCPSocket)
-        opt = [1, @timeout.to_i].pack('I!I!')  # { int l_onoff; int l_linger; }
-        io.setsockopt(Socket::SOL_SOCKET, Socket::SO_LINGER, opt)
-      end
-      $log.trace { "accepted fluent socket object_id=#{self.object_id}" }
       @on_message = on_message
-    end
-
-    def on_connect
     end
 
     def on_read(data)
@@ -175,32 +159,12 @@ class ForwardInput < Input
       $log.error_backtrace
       close
     end
-
-    def on_close
-      $log.trace { "closed fluent socket object_id=#{self.object_id}" }
-    end
-  end
-
-  class HeartbeatRequestHandler < Coolio::IO
-    def initialize(io, callback)
-      super(io)
-      @io = io
-      @callback = callback
-    end
-
-    def on_readable
-      msg, addr = @io.recvfrom(1024)
-      host = addr[3]
-      port = addr[1]
-      @callback.call(host, port, msg)
-    rescue
-      # TODO log?
-    end
   end
 
   def on_heartbeat_request(host, port, msg)
-    #$log.trace "heartbeat request from #{host}:#{port}"
-    @usock.send "", 0, host, port
+    if host and port then
+      @usock.send(host, port, "pong"){|_|}
+    end
   end
 end
 
