@@ -32,7 +32,6 @@ class Loop
 
   def initialize(loop)
     @loop = loop
-    @handles = []
 
     idle = self.idle {|_|
       if @stop
@@ -40,9 +39,6 @@ class Loop
         Foolio::UV.close_all @loop
       end
     }
-  end
-
-  def at_close(handle)
   end
 
   def idle(&block)
@@ -61,25 +57,20 @@ class Loop
   end
 
   def tcp(ip, port)
-    tcp = @loop.tcp.bind(ip, port)
-    at_close tcp
-    Fluent::EventIO::Stream.new self, tcp
+    handle = Foolio:UV.tcp_init(@loop)
+    Foolio::UV.tcp_bind(handle, Foolio::UV.ip4_addr(ip, port))
+    Fluent::EventIO::TCP.new @loop, handle
   end
 
   def udp
-    require 'ipaddr'
-    udp_ptr = UV.create_handle(:uv_udp)
-    UV.udp_init(@loop.to_ptr, udp_ptr)
-    server = UV::UDP.new(@loop, udp_ptr)
-
-    at_close server
-    Fluent::EventIO::UDP.new self, server
+    handle = Foolio:UV.udp_init(@loop)
+    Fluent::EventIO::UDP.new @loop, handle
   end
 
   def unix(path)
     pipe = @loop.pipe.bind(path)
     at_close pipe
-    Fluent::EventIO::Stream.new self, pipe
+    Fluent::EventIO::TCP.new self, pipe
   end
 
   def file_stat(path, &block)
@@ -112,11 +103,15 @@ class Handler
   end
 
   def write(data)
-    @io.write(data, &method(:on_write_complete))
+    callback = proc do|req, status|
+      on_write_complete()
+    end
+    @io.write(data, callback)
+    Foolio::UV.write(nil, @io, data, callback)
   end
 
   def close
-    @io.close {} if @io.active?
+    Foolio::UV.close(@io, proc{})
   end
 
   def on_write_complete; end
@@ -124,7 +119,7 @@ class Handler
   def on_close; end
 end
 
-class Stream
+class TCP
   class BlockHandler < Fluent::EventIO::Handler
     def initialize(io, block)
       super(io)
@@ -140,32 +135,24 @@ class Stream
   end
 
   def initialize(loop, stream)
-    @loop = loop
+    @loop   = loop
     @stream = stream
   end
 
   def listen_handler(backlog, klass, *args)
-    @stream.listen(backlog) do|client|
-      unless @loop.alive?
-        @stream.close {}
-        next
-      end
-      client = @stream.accept
-
+    callback = proc do|status|
+      client = Foolio:UV.tcp_init(@loop)
+      @stream.accept(@server, client)
       $log.info "accept #{client}"
       handle = klass.new(client, *args)
       handle.on_connect
 
-      client.start_read do |err, data|
-        if err
-          $log.trace { "closed fluent socket" }
-          handle.on_close
-          client.close {}
-        else
-          handle.on_read(data)
-        end
-      end
+      on_read = proc {|data|
+        handle.on_read(data)
+      }
+      Foolio::UV.read_start(client, on_read)
     end
+    FoolIO::UV.listen(@stream, backlog, callback)
     self
   end
 
@@ -181,22 +168,22 @@ class UDP
   end
 
   def bind(ip,port)
-    @udp.bind(ip, port)
+    Foolio::UV.udp_bind(handle, Foolio::UV.ip4_addr(ip, port), 0)
     self
   end
 
   def start(&block)
-    @udp.start_recv{|_,data,ip,port|
-       if @loop.alive?
-        block.call(ip, port, data) if ip
-      else
-        @udp.close {}
-      end
-    }
+    on_recv = proc do|data, addr, flags|
+      ip = Foolio::UV.ip_name addr
+      port = Foolio::UV.port addr
+      block.call(ip, port, data)
+    end
+    Foolio::UV.udp_recv_start(@udp, on_recv)
   end
 
   def send(ip, port, data)
-    @udp.send(ip, port, data){|_|}
+    on_send = proc {|req, status|}
+    Foolio::UV.udp_send(nil, @udp, data, Foolio::UV.ip4_addr(ip, port), on_send)
   end
 end
 
