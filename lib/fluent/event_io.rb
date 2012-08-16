@@ -22,11 +22,11 @@ module EventIO
 class Loop
   class << self
     def default
-      self.new UV::Loop.default
+      self.new Foolio::UV.default_loop
     end
 
     def create
-      self.new UV::Loop.new
+      self.new Foolio::UV.loop_new
     end
   end
 
@@ -34,27 +34,30 @@ class Loop
     @loop = loop
     @handles = []
 
-    idle = @loop.idle
-    idle.start {|x|
+    idle = self.idle {|_|
       if @stop
         $log.info "close all handles"
-        @handles.each {|t| t.close{} if t.active? }
-        idle.close {}
+        Foolio::UV.close_all @loop
       end
     }
   end
 
   def at_close(handle)
-    @handles << handle
+  end
+
+  def idle(&block)
+    handle = Foolio::UV.idle_init(@loop)
+    Foolio::UV.idle_start(handle,
+                          lambda {|_| block[] })
   end
 
   def timer(interval, repeat, &block)
-    timer = @loop.timer
-    timer.start((interval * 1000).to_i, repeat ? 1 : 0){|x|
-      block.call
-    }
-    at_close timer
-    timer
+    handle = Foolio::UV.timer_init(@loop)
+    sec    = (interval * 1000).to_i
+    Foolio::UV.timer_start(handle,
+                           proc {|_| block[] },
+                           sec,
+                           sec)
   end
 
   def tcp(ip, port)
@@ -86,7 +89,7 @@ class Loop
   end
 
   def run
-    @loop.run
+    Foolio::UV.run @loop
   end
 
   def alive?
