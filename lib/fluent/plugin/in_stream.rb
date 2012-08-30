@@ -27,17 +27,14 @@ class StreamInput < Input
   end
 
   def start
-    @loop = Coolio::Loop.new
+    @loop = Fluent::EventIO::Loop.create
     @lsock = listen
-    @loop.attach(@lsock)
     @thread = Thread.new(&method(:run))
     @cached_unpacker = MessagePack::Unpacker.new
   end
 
   def shutdown
-    @loop.watchers.each {|w| w.detach }
     @loop.stop
-    @lsock.close
     @thread.join
   end
 
@@ -102,7 +99,7 @@ class StreamInput < Input
     end
   end
 
-  class Handler < Coolio::Socket
+  class Handler < Fluent::EventIO::Handler
     def initialize(io, on_message)
       super(io)
       if io.is_a?(TCPSocket)
@@ -191,7 +188,7 @@ class UnixInput < StreamInput
     end
     FileUtils.mkdir_p File.dirname(@path)
     $log.debug "listening fluent socket on #{@path}"
-    Coolio::UNIXServer.new(@path, Handler, method(:on_message))
+    @loop.unix(@path).listen_handler(5, Handler, method(:on_message))
   end
 end
 

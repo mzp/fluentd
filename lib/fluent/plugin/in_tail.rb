@@ -59,7 +59,7 @@ class TailInput < Input
   end
 
   def start
-    @loop = Coolio::Loop.new
+    @loop = Fluent::EventIO::Loop.create
     @tails = @paths.map {|path|
       pe = @pf ? @pf[path] : NullPositionEntry.instance
       TailWatcher.new(path, @rotate_wait, pe, &method(:receive_lines))
@@ -119,22 +119,16 @@ class TailInput < Input
 
       @rotate_queue = []
 
-      @timer_trigger = TimerWatcher.new(1, true, &method(:on_notify))
-      @stat_trigger = StatWatcher.new(path, &method(:on_notify))
-
       @rotate_handler = RotateHandler.new(path, &method(:on_rotate))
       @io_handler = nil
     end
 
     def attach(loop)
-      @timer_trigger.attach(loop)
-      @stat_trigger.attach(loop)
+      @timer_trigger = loop.timer(1, &method(:on_notify))
+      @stat_trigger = loop.file_stat(@path){|fname, event|
+        on_notify
+      }
       on_notify
-    end
-
-    def detach
-      @timer_trigger.detach if @timer_trigger.attached?
-      @stat_trigger.detach if @stat_trigger.attached?
     end
 
     def close
@@ -142,7 +136,6 @@ class TailInput < Input
         req.io.close
         true
       }
-      detach
     end
 
     def on_notify
@@ -209,36 +202,6 @@ class TailInput < Input
           wait -= @rotate_queue.first.wait unless @rotate_queue.empty?
         end
         @rotate_queue << RotationRequest.new(io, wait)
-      end
-    end
-
-    class TimerWatcher < Coolio::TimerWatcher
-      def initialize(interval, repeat, &callback)
-        @callback = callback
-        super(interval, repeat)
-      end
-
-      def on_timer
-        @callback.call
-      rescue
-        # TODO log?
-        $log.error $!.to_s
-        $log.error_backtrace
-      end
-    end
-
-    class StatWatcher < Coolio::StatWatcher
-      def initialize(path, &callback)
-        @callback = callback
-        super(path)
-      end
-
-      def on_change(prev, cur)
-        @callback.call
-      rescue
-        # TODO log?
-        $log.error $!.to_s
-        $log.error_backtrace
       end
     end
 

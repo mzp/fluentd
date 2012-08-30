@@ -86,24 +86,19 @@ class ForwardOutput < ObjectBufferedOutput
     rebuild_weight_array
     @rr = 0
 
-    @loop = Coolio::Loop.new
+    @loop = Fluent::EventIO::Loop.create
 
-    @usock = UDPSocket.new
-    @hb = HeartbeatHandler.new(@usock, method(:on_heartbeat))
-    @loop.attach(@hb)
-
-    @timer = HeartbeatRequestTimer.new(@heartbeat_interval, method(:on_timer))
-    @loop.attach(@timer)
+    @usock = @loop.udp
+    @usock.start(&method(:on_heartbeat))
+    @loop.timer(@heartbeat_interval, &method(:on_timer))
 
     @thread = Thread.new(&method(:run))
   end
 
   def shutdown
     @finished = true
-    @loop.watchers.each {|w| w.detach }
     @loop.stop
     @thread.join
-    @usock.close
   end
 
   def run
@@ -233,19 +228,6 @@ class ForwardOutput < ObjectBufferedOutput
     TCPSocket.new(node.resolved_host, node.port)
   end
 
-  class HeartbeatRequestTimer < Coolio::TimerWatcher
-    def initialize(interval, callback)
-      super(interval, true)
-      @callback = callback
-    end
-
-    def on_timer
-      @callback.call
-    rescue
-      # TODO log?
-    end
-  end
-
   def on_timer
     return if @finished
     @nodes.each {|n|
@@ -253,8 +235,8 @@ class ForwardOutput < ObjectBufferedOutput
         rebuild_weight_array
       end
       begin
-        #$log.trace "sending heartbeat #{n.host}:#{n.port}"
-        @usock.send "", 0, Socket.pack_sockaddr_in(n.port, n.resolved_host)
+        $log.trace "sending heartbeat #{n.host}:#{n.port}"
+        @usock.send n.resolved_host, n.port, "ping"
       rescue
         # TODO log
         $log.debug "failed to send heartbeat packet to #{n.host}:#{n.port}", :error=>$!.to_s
@@ -262,27 +244,8 @@ class ForwardOutput < ObjectBufferedOutput
     }
   end
 
-  class HeartbeatHandler < Coolio::IO
-    def initialize(io, callback)
-      super(io)
-      @io = io
-      @callback = callback
-    end
-
-    def on_readable
-      msg, addr = @io.recvfrom(1024)
-      host = addr[3]
-      port = addr[1]
-      sockaddr = Socket.pack_sockaddr_in(port, host)
-      @callback.call(sockaddr, msg)
-    rescue
-      # TODO log?
-    end
-  end
-
-  def on_heartbeat(sockaddr, msg)
-    port, host = Socket.unpack_sockaddr_in(sockaddr)
-    if node = @nodes.find {|n| n.sockaddr == sockaddr }
+  def on_heartbeat(host, port, msg)
+    if node = @nodes.find {|n| n.host == host and n.port == port }
       #$log.trace "heartbeat from '#{node.name}'", :host=>node.host, :port=>node.port
       if node.heartbeat
         rebuild_weight_array

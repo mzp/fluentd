@@ -1,4 +1,4 @@
-
+# -*- coding: utf-8 -*-
 #
 # Fluent
 #
@@ -17,48 +17,57 @@
 #    limitations under the License.
 #
 module Fluent
+module EventIO
+class Loop
+  class << self
+    def default
+      self.new Foolio::Loop.default
+    end
 
-
-class StatusInput < Input
-  Plugin.register_input('status', self)
-
-  def initialize
-    super
+    def create
+      self.new Foolio::Loop.create
+    end
   end
 
-  config_param :emit_interval, :time, :default => 60
-  config_param :tag, :string
-
-  def configure(conf)
-    super
+  def initialize(loop)
+    @loop = loop
   end
 
-  def start
-    @loop = Fluent::EventIO::Loop.create
-    @loop.timer(@emit_interval, &method(:on_timer))
-    @thread = Thread.new(&method(:run))
+  def idle(&block)
+    @loop.idle.start(&block)
   end
 
-  def shutdown
-    @loop.stop
-    @thread.join
+  def timer(interval, &block)
+    @loop.timer.start(interval,&block)
+  end
+
+  def tcp(ip, port)
+    @loop.tcp(ip,port)
+  end
+
+  def udp
+    @loop.udp
+  end
+
+  def unix(path)
+    @loop.unix(path)
+  end
+
+  def file_stat(path, &block)
+    @loop.file_stat(path, &block)
   end
 
   def run
     @loop.run
-  rescue
-    $log.error "unexpected error", :error=>$!.to_s
-    $log.error_backtrace
   end
 
-  def on_timer
-    now = Engine.now
-    Status.each {|record|
-      Engine.emit(@tag, now, record)
-    }
+  def stop
+    @loop.stop
   end
 end
 
-
+class Handler < Foolio::Handler
 end
 
+end
+end
