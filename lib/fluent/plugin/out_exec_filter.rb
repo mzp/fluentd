@@ -252,6 +252,11 @@ class ExecFilterOutput < BufferedOutput
       rescue Errno::ESRCH
         # Errno::ESRCH 'No such process', ignore
         # child process killed by signal chained from fluentd process
+      rescue Errno::EINVAL
+        # Errno::EINVAL 'could not sent SIGTERM signal'.
+        # Some platform(e.g. Windows) could not support SIGTERM,
+        # so send SIGKILL immediately.
+        join_wait = 0
       end
       if @thread.join(join_wait)
         # @thread successfully shutdown
