@@ -148,5 +148,11 @@ class UnixInputTest < Test::Unit::TestCase
   def connect
     UNIXSocket.new("#{TMP_DIR}/unix")
   end
+
+  unless defined? UNIXSocket
+    self.test_methods.each do|meth|
+      define_method(meth) { skip "UNIXSocket is not supported at #{RUBY_PLATFORM}" }
+    end
+  end
 end
 
