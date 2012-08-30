@@ -113,6 +113,7 @@ class ForwardInputTest < Test::Unit::TestCase
     io = connect
     begin
       io.write data
+      sleep 0.1
     ensure
       io.close
     end
