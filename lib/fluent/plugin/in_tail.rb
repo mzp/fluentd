@@ -40,6 +40,9 @@ class TailInput < Input
     if @paths.empty?
       raise ConfigError, "tail: 'path' parameter is required on tail input"
     end
+    if @paths.size > 1 and IOUtil.block?
+      raise ConfigError, "tail: multiple 'path' parameter is not supported on #{RUBY_PLATFORM}"
+    end
 
     if @pos_file
       @pf_file = File.open(@pos_file, File::RDWR|File::CREAT)
@@ -110,6 +113,33 @@ class TailInput < Input
     return @parser.parse(line)
   end
 
+  module IOUtil
+    require 'tempfile'
+    class << self
+      Tempfile.open('fluentd-in-tail') do|io|
+        io.puts "."
+        io.pos = 0
+        begin
+          io.read_nonblock 1
+          @@use_block = false
+          def read(io, size, buffer)
+            io.read_nonblock(size, buffer)
+          end
+        rescue
+          $log.warn "tail: file read is blocked. Use only sigle file for 'path'"
+          @@use_block = true
+          def read(io, size, buffer)
+            io.readpartial(size, buffer)
+          end
+        end
+
+        def block?
+          @@use_block
+        end
+      end
+    end
+  end
+
   class TailWatcher
     def initialize(path, rotate_wait, pe, &receive_lines)
       @path = path
@@ -173,7 +203,7 @@ class TailInput < Input
           inode = stat.ino
           if inode == @pe.read_inode
             # seek to the saved position
-            pos = @pe.read_pos
+            pos = [fsize, @pe.read_pos].min
           else
             # seek to the end of the file.
             # logs never duplicate but may be lost if fluentd is down.
@@ -244,9 +274,9 @@ class TailInput < Input
           begin
             while true
               if @buffer.empty?
-                @io.read_nonblock(2048, @buffer)
+                IOUtil.read(@io, 2048, @buffer)
               else
-                @buffer << @io.read_nonblock(2048, @iobuf)
+                @buffer << IOUtil.read(@io, 2048, @iobuf)
               end
               while line = @buffer.slice!(/.*?\n/m)
                 lines << line
