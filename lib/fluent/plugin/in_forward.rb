@@ -37,7 +37,9 @@ class ForwardInput < Input
 
     @lsock = listen
 
-    @usock = @loop.udp.bind(@bind, @port).start(&method(:on_heartbeat_request))
+    @usock = @loop.udp
+    @usock.bind(@bind, @port)
+    @usock.start(&method(:on_heartbeat_request))
 
     @thread = Thread.new(&method(:run))
     @cached_unpacker = MessagePack::Unpacker.new
@@ -163,7 +165,7 @@ class ForwardInput < Input
 
   def on_heartbeat_request(host, port, msg)
     if host and port then
-      @usock.send(host, port, "pong"){|_|}
+      @usock.send(host, port, "pong")
     end
   end
 end
