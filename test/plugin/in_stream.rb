@@ -136,6 +136,10 @@ class UnixInputTest < Test::Unit::TestCase
     path #{TMP_DIR}/unix
   ]
 
+  def setup
+    skip unless defined?(::UNIXSocket)
+  end
+
   def create_driver(conf=CONFIG)
     super(Fluent::UnixInput, conf)
   end

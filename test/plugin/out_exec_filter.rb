@@ -24,7 +24,8 @@ class ExecFilterOutputTest < Test::Unit::TestCase
 
   def sed_unbuffered_support?
     @sed_unbuffered_support ||= lambda {
-      system("echo xxx | sed --unbuffered -l -e 's/x/y/g' >/dev/null 2>&1")
+      null_device = [ '/dev/null', 'NUL'].find(&File.method(:exists?))
+      system("echo xxx | sed --unbuffered -l -e 's/x/y/g'", :out => null_device, :err => null_device)
       $?.success?
     }.call
   end

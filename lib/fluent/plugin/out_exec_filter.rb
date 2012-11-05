@@ -249,6 +249,8 @@ class ExecFilterOutput < BufferedOutput
     def kill_child(join_wait)
       begin
         Process.kill(:TERM, @pid)
+	rescue Errno::EINVAL
+		join_wait = 0
       rescue Errno::ESRCH
         # Errno::ESRCH 'No such process', ignore
         # child process killed by signal chained from fluentd process

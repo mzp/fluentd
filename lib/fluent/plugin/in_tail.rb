@@ -190,7 +190,7 @@ class TailInput < Input
           # first time
           stat = io.stat
           fsize = stat.size
-          inode = stat.ino
+          inode = Fluent::EventIO::StatWatcher.file_id(io)
           if inode == @pe.read_inode
             # seek to the saved position
             pos = @pe.read_pos
@@ -286,6 +286,20 @@ class TailInput < Input
 
       attr_reader :io
 
+      def read_nonblock(io, size, buffer)
+	begin
+          io.read_nonblock size, buffer
+	rescue Errno::EBADF
+	  # some platform(e.g. windows) don't support non-blocking io for File.
+	  # fallback to IO#readpartial.
+	  # see http://bugs.ruby-lang.org/issues/5954
+          def read_nonblock(io,size, buffer)
+            io.readpartial size, buffer
+	  end
+	  read_nonblock(io, size, buffer)
+	end
+      end
+
       def on_notify
         begin
           lines = []
@@ -294,9 +308,9 @@ class TailInput < Input
           begin
             while true
               if @buffer.empty?
-                @io.read_nonblock(2048, @buffer)
+                read_nonblock(io, 2048, @buffer)
               else
-                @buffer << @io.read_nonblock(2048, @iobuf)
+                @buffer << read_nonblock(io, 2048, @iobuf)
               end
               while line = @buffer.slice!(/.*?\n/m)
                 lines << line
@@ -355,7 +369,7 @@ class TailInput < Input
         begin
           io = File.open(@path)
           stat = io.stat
-          inode = stat.ino
+          inode = Fluent::EventIO::StatWatcher.file_id(io)
           fsize = stat.size
         rescue Errno::ENOENT
           # moved or deleted
@@ -400,7 +414,7 @@ class TailInput < Input
       @file.write path
       @file.write "\t"
       seek = @file.pos
-      @file.write "0000000000000000\t00000000\n"
+      @file.write "0000000000000000\t00000000000000000000000000000000\n"
       @last_pos = @file.pos
 
       @map[path] = FilePositionEntry.new(@file, seek)
@@ -427,7 +441,7 @@ class TailInput < Input
   class FilePositionEntry
     POS_SIZE = 16
     INO_OFFSET = 17
-    INO_SIZE = 8
+    INO_SIZE = 32
     LN_OFFSET = 25
     SIZE = 26
 
@@ -438,7 +452,7 @@ class TailInput < Input
 
     def update(ino, pos)
       @file.pos = @seek
-      @file.write "%016x\t%08x" % [pos, ino]
+      @file.write "%016x\t%032x" % [pos, ino]
       @inode = ino
     end
 
@@ -449,7 +463,7 @@ class TailInput < Input
 
     def read_inode
       @file.pos = @seek + INO_OFFSET
-      @file.read(8).to_i(16)
+      @file.read(INO_SIZE).to_i(16)
     end
 
     def read_pos
