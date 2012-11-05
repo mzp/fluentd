@@ -118,6 +118,14 @@ class ForwardInputTest < Test::Unit::TestCase
     end
   end
 
-  # TODO heartbeat
+  def test_heartbeat
+    d = create_driver
+    d.run do
+      usock = UDPSocket.new
+      usock.connect "127.0.0.1", 13998
+      usock.send "\0", 0
+      assert_equal "\0", usock.recv(1)
+    end
+  end
 end
 
