@@ -33,14 +33,13 @@ class ForwardInput < Input
   end
 
   def start
-    @loop = Coolio::Loop.new
+    @loop = Fluent::EventIO::Loop.new
 
     @lsock = listen
     @loop.attach(@lsock)
 
-    @usock = UDPSocket.new
-    @usock.bind(@bind, @port)
-    @hbr = HeartbeatRequestHandler.new(@usock, method(:on_heartbeat_request))
+    @hbr = HeartbeatRequestHandler.new(nil, method(:on_heartbeat_request))
+    @hbr.bind(@bind, @port)
     @loop.attach(@hbr)
 
     @thread = Thread.new(&method(:run))
@@ -48,18 +47,15 @@ class ForwardInput < Input
   end
 
   def shutdown
-    @loop.watchers.each {|w| w.detach }
     @loop.stop
-    @usock.close
     listen_address = (@bind == '0.0.0.0' ? '127.0.0.1' : @bind)
     TCPSocket.open(listen_address, @port) {|sock| }  # FIXME @thread.join blocks without this line
     @thread.join
-    @lsock.close
   end
 
   def listen
     $log.info "listening fluent socket on #{@bind}:#{@port}"
-    Coolio::TCPServer.new(@bind, @port, Handler, method(:on_message))
+    Fluent::EventIO::TCPServer.new(@bind, @port, Handler, method(:on_message))
   end
 
   #config_param :path, :string, :default => DEFAULT_SOCKET_PATH
@@ -130,7 +126,7 @@ class ForwardInput < Input
     end
   end
 
-  class Handler < Coolio::Socket
+  class Handler < Fluent::EventIO::Socket
     def initialize(io, on_message)
       super(io)
       if io.is_a?(TCPSocket)
@@ -166,7 +162,7 @@ class ForwardInput < Input
     rescue
       $log.error "forward error: #{$!.to_s}"
       $log.error_backtrace
-      close
+      detach
     end
 
     def on_read_msgpack(data)
@@ -174,7 +170,7 @@ class ForwardInput < Input
     rescue
       $log.error "forward error: #{$!.to_s}"
       $log.error_backtrace
-      close
+      detach
     end
 
     def on_close
@@ -182,15 +178,13 @@ class ForwardInput < Input
     end
   end
 
-  class HeartbeatRequestHandler < Coolio::IO
+  class HeartbeatRequestHandler < Fluent::EventIO::UDPSocket
     def initialize(io, callback)
       super(io)
-      @io = io
       @callback = callback
     end
 
-    def on_readable
-      msg, addr = @io.recvfrom(1024)
+    def on_read(msg, addr)
       host = addr[3]
       port = addr[1]
       @callback.call(host, port, msg)
@@ -201,7 +195,7 @@ class ForwardInput < Input
 
   def on_heartbeat_request(host, port, msg)
     #$log.trace "heartbeat request from #{host}:#{port}"
-    @usock.send "\0", 0, host, port
+    @hbr.send "\0", 0, host, port
   end
 end
 

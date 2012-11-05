@@ -56,7 +56,7 @@ class SyslogInputTest < Test::Unit::TestCase
       u = UDPSocket.new
       u.connect('127.0.0.1', 9911)
       tests.each {|test|
-        u.send(test['msg'], 0)
+        u.send(test['msg']+"\n", 0)
       }
       sleep 1
     end

@@ -29,7 +29,7 @@ class ObjectSpaceInput < Input
   config_param :tag, :string
   config_param :top, :integer, :default => 15
 
-  class TimerWatcher < Coolio::TimerWatcher
+  class TimerWatcher < Fluent::EventIO::TimerWatcher
     def initialize(interval, repeat, &callback)
       @callback = callback
       super(interval, repeat)
@@ -49,7 +49,7 @@ class ObjectSpaceInput < Input
   end
 
   def start
-    @loop = Coolio::Loop.new
+    @loop = Fluent::EventIO::Loop.new
     @timer = TimerWatcher.new(@emit_interval, true, &method(:on_timer))
     @loop.attach(@timer)
     @thread = Thread.new(&method(:run))

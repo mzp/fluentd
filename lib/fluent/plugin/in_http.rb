@@ -39,7 +39,7 @@ class HttpInput < Input
     super
   end
 
-  class KeepaliveManager < Coolio::TimerWatcher
+  class KeepaliveManager < Fluent::EventIO::TimerWatcher
     class TimerValue
       def initialize
         @value = 0
@@ -72,15 +72,14 @@ class HttpInput < Input
 
   def start
     $log.debug "listening http on #{@bind}:#{@port}"
-    lsock = TCPServer.new(@bind, @port)
+#    lsock = TCPServer.new(@bind, @port)
 
     detach_multi_process do
       super
       @km = KeepaliveManager.new(@keepalive_timeout)
-      #@lsock = Coolio::TCPServer.new(@bind, @port, Handler, @km, method(:on_request), @body_size_limit)
-      @lsock = Coolio::TCPServer.new(lsock, nil, Handler, @km, method(:on_request), @body_size_limit)
+      @lsock = Fluent::EventIO::TCPServer.new(@bind, @port, Handler, @km, method(:on_request), @body_size_limit)
 
-      @loop = Coolio::Loop.new
+      @loop = Fluent::EventIO::Loop.new
       @loop.attach(@km)
       @loop.attach(@lsock)
 
@@ -89,9 +88,7 @@ class HttpInput < Input
   end
 
   def shutdown
-    @loop.watchers.each {|w| w.detach }
     @loop.stop
-    @lsock.close
     @thread.join
   end
 
@@ -137,7 +134,7 @@ class HttpInput < Input
     return ["200 OK", {'Content-type'=>'text/plain'}, ""]
   end
 
-  class Handler < Coolio::Socket
+  class Handler < Fluent::EventIO::Socket
     def initialize(io, km, callback, body_size_limit)
       super(io)
       @km = km
@@ -249,7 +246,7 @@ class HttpInput < Input
     end
 
     def on_write_complete
-      close if @next_close
+      detach if @next_close
     end
 
     def send_response_and_close(code, header, body)

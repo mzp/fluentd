@@ -90,22 +90,20 @@ class SyslogInput < Input
       callback = method(:receive_data)
     end
 
-    @loop = Coolio::Loop.new
+    @loop = Fluent::EventIO::Loop.new
 
     $log.debug "listening syslog socket on #{@bind}:#{@port}"
-    @usock = UDPSocket.new
-    @usock.bind(@bind, @port)
 
-    @handler = UdpHandler.new(@usock, callback)
+    @handler = UdpHandler.new(nil, callback)
+    @handler.bind(@bind, @port)
     @loop.attach(@handler)
 
     @thread = Thread.new(&method(:run))
   end
 
   def shutdown
-    @loop.watchers.each {|w| w.detach }
     @loop.stop
-    @handler.close
+    ::UDPSocket.new.tap{|u| u.connect(@bind,@port) }.send(".",0)
     @thread.join
   end
 
@@ -181,15 +179,14 @@ class SyslogInput < Input
     Engine.emit(tag, time, record)
   end
 
-  class UdpHandler < Coolio::IO
+  class UdpHandler < Fluent::EventIO::UDPSocket
     def initialize(io, callback)
       super(io)
       @io = io
       @callback = callback
     end
 
-    def on_readable
-      msg, addr = @io.recvfrom_nonblock(2048)
+    def on_read(msg, addr)
       #host = addr[3]
       #port = addr[1]
       #@callback.call(host, port, msg)

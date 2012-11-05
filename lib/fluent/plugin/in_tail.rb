@@ -59,7 +59,7 @@ class TailInput < Input
   end
 
   def start
-    @loop = Coolio::Loop.new
+    @loop = Fluent::EventIO::Loop.new
     @tails = @paths.map {|path|
       pe = @pf ? @pf[path] : MemoryPositionEntry.new
       TailWatcher.new(path, @rotate_wait, pe, &method(:receive_lines))
@@ -225,7 +225,7 @@ class TailInput < Input
       end
     end
 
-    class TimerWatcher < Coolio::TimerWatcher
+    class TimerWatcher < Fluent::EventIO::TimerWatcher
       def initialize(interval, repeat, &callback)
         @callback = callback
         super(interval, repeat)
@@ -240,7 +240,7 @@ class TailInput < Input
       end
     end
 
-    class StatWatcher < Coolio::StatWatcher
+    class StatWatcher < Fluent::EventIO::StatWatcher
       def initialize(path, &callback)
         @callback = callback
         super(path)

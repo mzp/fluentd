@@ -141,8 +141,8 @@ class EngineClass
       end
 
       # for empty loop
-      @default_loop = Coolio::Loop.default
-      @default_loop.attach Coolio::TimerWatcher.new(1, true)
+      @default_loop = Fluent::EventIO::Loop.default
+      @default_loop.attach Fluent::EventIO::TimerWatcher.new(1, true)
       # TODO attach async watch for thread pool
       @default_loop.run
 
