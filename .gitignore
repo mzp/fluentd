@@ -18,3 +18,9 @@ fluentd
 pkg/*
 test/tmp/*
 make_dist.sh
+*.bundle
+*.so
+*.o
+*.log
+*.a
+*.def

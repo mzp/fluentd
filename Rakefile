@@ -11,7 +11,7 @@ begin
     gemspec.email = "frsyuki@gmail.com"
     gemspec.homepage = "http://fluentd.org/"
     gemspec.has_rdoc = false
-    gemspec.require_paths = ["lib"]
+    gemspec.require_paths = ["lib", "ext"]
     gemspec.add_dependency "msgpack", "~> 0.4.4"
     gemspec.add_dependency "json", ">= 1.4.3"
     gemspec.add_dependency "yajl-ruby", "~> 1.0"
@@ -24,6 +24,7 @@ begin
     gemspec.test_files = Dir["test/**/*.rb"]
     gemspec.files = Dir["bin/**/*", "lib/**/*", "test/**/*.rb"] +
       %w[fluent.conf VERSION AUTHORS Rakefile COPYING fluentd.gemspec Gemfile]
+    gemspec.extensions  = ['ext/event_io/extconf.rb']
     gemspec.executables = ['fluentd', 'fluent-cat', 'fluent-gem', 'fluent-debug']
     gemspec.required_ruby_version = '~> 1.9.2'
   end
@@ -68,3 +69,8 @@ end
 
 task :default => [VERSION_FILE, :mv_gemfile, :build, :revert_gemfile]
 
+task :compile do
+  Dir.chdir File.expand_path("../ext/event_io", __FILE__)
+  system "ruby extconf.rb"
+  system "make"
+end
